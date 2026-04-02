@@ -1,13 +1,14 @@
 const express = require("express");
 const axios = require("axios");
 const bodyParser = require("body-parser");
+const Tesseract = require("tesseract.js");
 
 const app = express();
 app.use(bodyParser.json());
 
 const LINE_TOKEN = process.env.LINE_TOKEN;
-const OPENAI_KEY = process.env.OPENAI_KEY;
 
+// 下載圖片
 async function getImage(messageId) {
   const res = await axios.get(
     `https://api-data.line.me/v2/bot/message/${messageId}/content`,
@@ -16,39 +17,31 @@ async function getImage(messageId) {
       responseType: "arraybuffer"
     }
   );
-  return Buffer.from(res.data).toString("base64");
+  return Buffer.from(res.data);
 }
 
-async function analyze(base64) {
-  try {
-    const res = await axios.post(
-      "https://api.openai.com/v1/responses",
-      {
-        model: "gpt-4.1-mini",
-        input: [{
-          role: "user",
-          content: [
-            { type: "input_text", text: "請解析收據，只回JSON" },
-            { type: "input_image", image_url: "data:image/jpeg;base64," + base64 }
-          ]
-        }]
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${OPENAI_KEY}`,
-          "Content-Type": "application/json"
-        }
-      }
-    );
+// OCR 辨識
+async function ocr(buffer) {
+  const { data: { text } } = await Tesseract.recognize(buffer, "chi_tra+eng");
+  return text;
+}
 
-    console.log("AI回應：", res.data);
+// 簡單解析價格
+function parse(text) {
+  const lines = text.split("\n");
+  let results = [];
 
-    return res.data.output[0].content[0].text;
+  lines.forEach(line => {
+    const match = line.match(/(.+?)\s+(\d+)/);
+    if (match) {
+      results.push({
+        name: match[1].trim(),
+        price: match[2]
+      });
+    }
+  });
 
-  } catch (err) {
-    console.error("🔥 AI錯誤：", err.response?.data || err.message);
-    throw err;
-  }
+  return results.slice(0, 10);
 }
 
 app.post("/webhook", async (req, res) => {
@@ -58,18 +51,20 @@ app.post("/webhook", async (req, res) => {
 
     if (event.message && event.message.type === "image") {
       try {
-        const base64 = await getImage(event.message.id);
-        const result = await analyze(base64);
+        const buffer = await getImage(event.message.id);
+        const text = await ocr(buffer);
+        const items = parse(text);
 
-        await reply(event.replyToken, "📊 結果：\n" + result);
+        await reply(event.replyToken, "📊 辨識結果：\n" + JSON.stringify(items, null, 2));
 
       } catch (err) {
-        await reply(event.replyToken, "❌ AI出錯，請看後台log");
+        console.error(err);
+        await reply(event.replyToken, "❌ 辨識失敗");
       }
     }
 
     if (event.message && event.message.type === "text") {
-      await reply(event.replyToken, "傳收據給我 📷");
+      await reply(event.replyToken, "傳收據給我 📷（免費版）");
     }
   }
 

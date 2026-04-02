@@ -7,7 +7,6 @@ app.use(bodyParser.json());
 
 const LINE_TOKEN = process.env.LINE_TOKEN;
 
-// webhook
 app.post("/webhook", async (req, res) => {
   console.log("🔥 收到 webhook");
 
@@ -15,23 +14,34 @@ app.post("/webhook", async (req, res) => {
 
   for (let event of events) {
 
-    console.log("事件類型：", event.message?.type);
+    // 👉 一定要先確認是 message 類型
+    if (event.type !== "message") continue;
+
+    console.log("完整事件：", JSON.stringify(event, null, 2));
+
+    const msgType = event.message.type;
+
+    console.log("訊息類型：", msgType);
 
     // 📷 圖片
-    if (event.message && event.message.type === "image") {
+    if (msgType === "image") {
       await reply(event.replyToken, "📷 我收到圖片了！");
+      continue;
     }
 
     // 💬 文字
-    if (event.message && event.message.type === "text") {
+    if (msgType === "text") {
       await reply(event.replyToken, "我收到文字了 👍");
+      continue;
     }
+
+    // 其他類型
+    await reply(event.replyToken, "收到其他類型訊息");
   }
 
   res.sendStatus(200);
 });
 
-// 回覆
 async function reply(token, text) {
   try {
     await axios.post(

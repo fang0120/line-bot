@@ -62,17 +62,19 @@ app.post("/webhook", async (req, res) => {
 
   for (let event of events) {
 
-    // 📷 圖片
     if (event.message && event.message.type === "image") {
-      await reply(event.replyToken, "📷 辨識中...");
+      try {
+        const base64 = await getImage(event.message.id);
+        const result = await analyze(base64);
 
-      const base64 = await getImage(event.message.id);
-      const result = await analyze(base64);
+        await reply(event.replyToken, "📊 辨識結果：\n" + result);
 
-      await reply(event.replyToken, "📊 結果：\n" + result);
+      } catch (err) {
+        console.error(err);
+        await reply(event.replyToken, "❌ 辨識失敗");
+      }
     }
 
-    // 💬 文字
     if (event.message && event.message.type === "text") {
       await reply(event.replyToken, "傳收據給我 📷");
     }
